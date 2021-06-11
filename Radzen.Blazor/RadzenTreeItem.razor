@@ -1,10 +1,14 @@
 @using Radzen
-
+@implements IDisposable
 <li class="rz-treenode">
     <div class="@($"rz-treenode-content {(selected ? "rz-treenode-content-selected" : "")}")" @onclick="@Select">
         @if (ChildContent != null || HasChildren)
         {
             <span class="@($"rz-tree-toggler rzi {(expanded ? "rzi-caret-down" : "rzi-caret-right")}")" @onclick="@Toggle" @onclick:stopPropagation></span>
+        }
+        @if(Tree != null && Tree.AllowCheckBoxes)
+        {
+            <RadzenCheckBox TValue="bool?" Value="@isChecked" Change="@CheckedChange" Style="@(ParentItem != null && !HasChildren ? "margin-left:25px;margin-right:5px;" : "margin-right:5px;")" />
         }
         @if (Template != null)
         {
@@ -51,6 +55,77 @@
     [CascadingParameter]
     public RadzenTree Tree { get; set; }
 
+    RadzenTreeItem _parentItem;
+
+    [Parameter]
+    public RadzenTreeItem ParentItem
+    {
+        get
+        {
+            return _parentItem;
+        }
+        set
+        {
+            if (_parentItem != value)
+            {
+                _parentItem = value;
+
+                if (_parentItem != null)
+                {
+                    _parentItem.AddItem(this);
+                }
+            }
+        }
+    }
+
+    internal List<RadzenTreeItem> items = new List<RadzenTreeItem>();
+
+    internal void AddItem(RadzenTreeItem item)
+    {
+        if (items.IndexOf(item) == -1)
+        {
+            items.Add(item);
+
+            if (Tree != null && Tree.AllowCheckChildren)
+            {
+                item.isChecked = isChecked;
+                
+                if (Tree.CheckedItems != null && Tree.CheckedItems.Contains(item.Value))
+                {
+                    item.isChecked = true;
+                }
+
+                Tree.UpdateCheckedItems().Wait();
+            }
+        }
+    }
+
+    internal void RemoveItem(RadzenTreeItem item)
+    {
+        if (items.IndexOf(item) != -1)
+        {
+            items.Remove(item);
+
+            if (Tree != null && Tree.AllowCheckChildren)
+            {
+                item.isChecked = isChecked;
+                Tree.UpdateCheckedItems().Wait();
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        if (ParentItem != null)
+        {
+            ParentItem.RemoveItem(this);
+        }
+        else if(Tree != null)
+        {
+            Tree.RemoveItem(this);
+        }
+    }
+
     async Task Toggle()
     {
         expanded = !expanded;
@@ -93,6 +168,11 @@
         {
             Tree?.SelectItem(this);
         }
+
+        if (Tree != null && ParentItem == null)
+        {
+            Tree.AddItem(this);
+        }
     }
 
     public override async Task SetParametersAsync(ParameterView parameters)
@@ -129,5 +209,74 @@
         }
 
         await base.SetParametersAsync(parameters);
+    }
+
+    internal bool? isChecked = false;
+
+    internal async Task CheckedChange(bool? value)
+    {
+        isChecked = value;
+
+        if (Tree != null)
+        {
+            if (Tree.AllowCheckChildren)
+            {
+                CheckChildren(value);
+            }
+
+            if (Tree.AllowCheckParents)
+            {
+                UpdateParents();
+            }
+
+            await Tree.UpdateCheckedItems();
+        }
+    }
+
+    internal bool AreAllChildrenChecked()
+    {
+        return items.Concat(items.SelectManyRecursive(i => i.items)).All(i => i.isChecked == true);
+    }
+
+    internal bool AreAllChildrenUnchecked()
+    {
+        return items.Concat(items.SelectManyRecursive(i => i.items)).SelectManyRecursive(i => i.items).All(i => i.isChecked == false);
+    }
+
+    internal bool IsAtLeastOneChildUnchecked()
+    {
+        return items.Concat(items.SelectManyRecursive(i => i.items)).SelectManyRecursive(i => i.items).Any(i => i.isChecked != true);
+    }
+
+    internal void CheckChildren(bool? value)
+    { 
+        foreach(var item in items)
+        {
+            item.isChecked = value;
+
+            item.items.ForEach(i => 
+            {
+                i.isChecked = value;
+                i.CheckChildren(value);
+            });
+        }
+    }
+
+    internal void UpdateParents()
+    { 
+        var p = ParentItem;
+        while (p != null)
+        {
+            if (isChecked != true || p.IsAtLeastOneChildUnchecked())
+            {
+                p.isChecked = null;
+            }
+            else
+            {
+                p.isChecked = p.AreAllChildrenChecked();
+            }
+
+            p = p.ParentItem;
+        }
     }
 }
