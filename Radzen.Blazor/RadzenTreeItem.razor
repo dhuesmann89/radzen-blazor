@@ -88,14 +88,12 @@
 
             if (Tree != null && Tree.AllowCheckChildren)
             {
-                item.isChecked = isChecked;
+                item.SetIsChecked(isChecked);
                 
                 if (Tree.CheckedItems != null && Tree.CheckedItems.Contains(item.Value))
                 {
-                    item.isChecked = true;
+                    item.SetIsChecked(true);
                 }
-
-                Tree.UpdateCheckedItems().Wait();
             }
         }
     }
@@ -108,8 +106,7 @@
 
             if (Tree != null && Tree.AllowCheckChildren)
             {
-                item.isChecked = isChecked;
-                Tree.UpdateCheckedItems().Wait();
+                item.SetIsChecked(isChecked);
             }
         }
     }
@@ -213,9 +210,9 @@
 
     internal bool? isChecked = false;
 
-    internal async Task CheckedChange(bool? value)
+    internal void CheckedChange(bool? value)
     {
-        isChecked = value;
+        SetIsChecked(value);
 
         if (Tree != null)
         {
@@ -228,8 +225,37 @@
             {
                 UpdateParents();
             }
+        }
+    }
 
-            await Tree.UpdateCheckedItems();
+    internal void SetIsChecked(bool? value)
+    {
+        if (isChecked != value)
+        {
+            isChecked = value;
+
+            var tree = GetTree();
+            if (tree != null)
+            {
+                var checkedItems = tree.CheckedItems != null ? new List<object>(tree.CheckedItems) : new List<object>();
+
+                if (value == false)
+                {
+                    if (Value != null && checkedItems.Contains(Value))
+                    {
+                        checkedItems.Remove(Value);
+                    }
+                }
+                else
+                {
+                    if (Value != null && !checkedItems.Contains(Value))
+                    {
+                        checkedItems.Add(Value);
+                    }
+                }
+
+                tree.SetCheckedItems(checkedItems).Wait();
+            }
         }
     }
 
@@ -252,11 +278,11 @@
     { 
         foreach(var item in items)
         {
-            item.isChecked = value;
+            item.SetIsChecked(value);
 
             item.items.ForEach(i => 
             {
-                i.isChecked = value;
+                i.SetIsChecked(value);
                 i.CheckChildren(value);
             });
         }
@@ -269,14 +295,27 @@
         {
             if (isChecked != true || p.IsAtLeastOneChildUnchecked())
             {
-                p.isChecked = null;
+                p.SetIsChecked(null);
             }
             else
             {
-                p.isChecked = p.AreAllChildrenChecked();
+                p.SetIsChecked(p.AreAllChildrenChecked());
             }
 
             p = p.ParentItem;
         }
+    }
+
+    internal RadzenTree GetTree()
+    {
+        RadzenTree tree = null;
+        RadzenTreeItem p = ParentItem;
+        while (p != null)
+        {
+            tree = p.Tree;
+            p = p.ParentItem;
+        }
+
+        return tree;
     }
 }

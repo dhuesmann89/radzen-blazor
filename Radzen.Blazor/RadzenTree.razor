@@ -68,7 +68,7 @@
         {
             if (CheckedItems != null && CheckedItems.Contains(item.Value))
             {
-                item.isChecked = true;
+                item.SetIsChecked(true);
             }
 
             items.Add(item);
@@ -83,10 +83,10 @@
         }
     }
 
-    internal async Task UpdateCheckedItems()
+    internal async Task SetCheckedItems(IEnumerable<object> items)
     {
-        CheckedItems = items.Concat(items.SelectManyRecursive(i => i.items)).Where(i => i.isChecked != false).Select(i => i.Value);
-        await CheckedItemsChanged.InvokeAsync(CheckedItems);
+        CheckedItems = items;
+        await CheckedItemsChanged.InvokeAsync(items);
     }
 
     [Parameter]
